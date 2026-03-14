@@ -1,0 +1,81 @@
+version: 1
+
+project_id: olist-lik-hong
+send_anonymous_usage_stats: false
+
+default_environment: prod
+
+environments:
+  - name: prod
+
+plugins:
+  extractors:
+    - name: tap-csv
+      namespace: tap_csv
+      pip_url: tap-csv
+      executable: tap-csv
+      capabilities:
+        - state
+        - catalog
+        - discover
+      settings:
+        - name: files
+          kind: array
+      config:
+        files:
+          - entity: orders
+            path: /home/alib11/sandbox/m2-olist/data/olist_orders_dataset.csv
+            keys:
+              - order_id
+          - entity: order_items
+            path: /home/alib11/sandbox/m2-olist/data/olist_order_items_dataset.csv
+            keys:
+              - order_id
+              - order_item_id
+          - entity: order_payments
+            path: /home/alib11/sandbox/m2-olist/data/olist_order_payments_dataset.csv
+            keys:
+              - order_id
+              - payment_sequential
+          - entity: order_reviews
+            path: /home/alib11/sandbox/m2-olist/data/olist_order_reviews_dataset.csv
+            keys:
+              - review_id
+          - entity: customers
+            path: /home/alib11/sandbox/m2-olist/data/olist_customers_dataset.csv
+            keys:
+              - customer_id
+          - entity: products
+            path: /home/alib11/sandbox/m2-olist/data/olist_products_dataset.csv
+            keys:
+              - product_id
+          - entity: sellers
+            path: /home/alib11/sandbox/m2-olist/data/olist_sellers_dataset.csv
+            keys:
+              - seller_id
+          - entity: geolocation
+            path: /home/alib11/sandbox/m2-olist/data/olist_geolocation_dataset.csv
+            keys:
+              - geolocation_zip_code_prefix
+
+  loaders:
+    - name: target-gcs
+      namespace: target_gcs
+      pip_url: target-gcs
+      executable: target-gcs
+      settings:
+        - name: bucket
+          kind: string
+        - name: prefix
+          kind: string
+        - name: format
+          kind: string
+      config:
+        bucket: project-12fdd3b7-c899-4bef-931-bronze
+        prefix: olist/raw/
+        format: jsonl
+
+jobs:
+  - name: olist-el
+    tasks:
+      - tap-csv target-gcs

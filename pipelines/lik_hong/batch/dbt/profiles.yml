@@ -1,0 +1,11 @@
+olist_lik_hong:
+  target: prod
+  outputs:
+    prod:
+      type: bigquery
+      method: oauth
+      project: project-12fdd3b7-c899-4bef-931
+      dataset: olist_gold
+      location: US
+      threads: 4
+      timeout_seconds: 300

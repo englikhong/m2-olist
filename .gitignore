@@ -1,0 +1,47 @@
+# GCP credentials — NEVER commit these
+dashboards/*/config/gcp_config.yaml
+dashboards/*/config/*.json
+config/gcp_config.yaml
+*.json
+service_account*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Jupyter
+.ipynb_checkpoints/
+
+# dbt (per-developer)
+pipelines/*/batch/dbt/target/
+pipelines/*/batch/dbt/logs/
+pipelines/*/batch/dbt/.user.yml
+
+# Meltano (per-developer)
+pipelines/*/batch/meltano/.meltano/
+
+# Dagster
+pipelines/lik_hong/dagster/.dagster/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Gradio cache
+gradio_cached_examples/
+*.pck
+flagged/

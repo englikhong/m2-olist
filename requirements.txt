@@ -1,0 +1,32 @@
+# Core UI
+gradio>=4.36.0
+plotly>=5.22.0
+pandas>=2.2.0
+numpy>=1.26.0
+
+# GCP
+google-cloud-bigquery>=3.25.0
+google-cloud-storage>=2.17.0
+google-cloud-pubsub>=2.21.0
+google-auth>=2.30.0
+db-dtypes>=1.2.0
+
+# Redis (Memorystore)
+redis>=5.0.0
+
+# Config
+pyyaml>=6.0.1
+python-dotenv>=1.0.0
+
+# Data / ML
+scikit-learn>=1.5.0
+joblib>=1.4.0
+
+# Pipeline (Lik Hong — batch + real-time)
+# meltano>=3.5.0        # install separately: pip install meltano
+# dbt-bigquery>=1.8.0   # install separately: pip install dbt-bigquery
+# dagster>=1.7.0        # install separately: pip install dagster dagster-webserver
+
+# Dev utilities
+requests>=2.32.0
+python-dateutil>=2.9.0

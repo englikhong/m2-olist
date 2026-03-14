@@ -1,0 +1,27 @@
+# GCP Configuration Template
+# ─────────────────────────────────────────────────────────────
+# INSTRUCTIONS:
+#   1. Copy this file to dashboards/<your_name>/config/gcp_config.yaml
+#   2. Fill in YOUR values below
+#   3. Never commit your gcp_config.yaml — it is gitignored
+#   4. See quick-setup.md for full step-by-step instructions
+# ─────────────────────────────────────────────────────────────
+
+# Authentication method: "adc" or "service_account"
+# - adc:             Use gcloud Application Default Credentials (run: gcloud auth application-default login)
+# - service_account: Use a downloaded service account JSON key file
+auth_method: adc
+
+# Your GCP project ID (e.g. "olist-analytics-likhong")
+project_id: YOUR_GCP_PROJECT_ID
+
+# BigQuery dataset name where your Gold tables live (e.g. "olist_gold")
+dataset: olist_gold
+
+# BigQuery location / region (e.g. "US", "asia-southeast1")
+location: US
+
+# [Required only if auth_method = service_account]
+# Path to your service account JSON key file — relative to project root
+# Example: dashboards/lik_hong/config/service_account.json
+key_path: dashboards/YOUR_NAME/config/service_account.json
