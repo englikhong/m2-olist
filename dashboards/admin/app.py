@@ -393,6 +393,30 @@ def action_stop_simulator() -> str:
             return f"{_ts()} ✓ Simulator force-killed (PID {pid})."
 
 
+def action_load_local_cache() -> str:
+    """Run load_cache.py directly to populate Redis from BQ — no Pub/Sub needed."""
+    script = _PROJECT_ROOT / "pipelines/lik_hong/realtime/redis_cache/load_cache.py"
+    if not script.exists():
+        return f"{_ts()} ✗ load_cache.py not found at {script}"
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            cwd=str(_PROJECT_ROOT),
+            capture_output=True, text=True, timeout=120,
+        )
+        lines = []
+        if result.stdout:
+            lines += result.stdout.splitlines()[-10:]
+        if result.stderr:
+            lines += result.stderr.splitlines()[-6:]
+        status = "✓ Redis cache loaded from BQ." if result.returncode == 0 else f"✗ Failed (exit {result.returncode})"
+        return f"{_ts()} {status}\n" + "\n".join(lines)
+    except subprocess.TimeoutExpired:
+        return f"{_ts()} ✗ load_cache.py timed out after 120s."
+    except Exception as e:
+        return f"{_ts()} ✗ Error: {e}"
+
+
 def get_pipeline_status() -> str:
     sim_running = _simulator_proc is not None and _simulator_proc.poll() is None
     return "\n".join([
@@ -403,6 +427,131 @@ def get_pipeline_status() -> str:
         "─" * 48,
         "  Gold Tables (BigQuery) — run pipeline to populate.",
     ])
+
+
+
+# ══════════════════════════════════════════════════════════════
+# Section 0 — Local CSV Ingest (dev shortcut, bypasses GCS)
+# ══════════════════════════════════════════════════════════════
+
+_ENTITY_FILES = {
+    "orders":         ["olist_orders_dataset.csv",         "orders.csv"],
+    "order_items":    ["olist_order_items_dataset.csv",    "order_items.csv"],
+    "order_payments": ["olist_order_payments_dataset.csv", "order_payments.csv"],
+    "order_reviews":  ["olist_order_reviews_dataset.csv",  "order_reviews.csv"],
+    "customers":      ["olist_customers_dataset.csv",      "customers.csv"],
+    "products":       ["olist_products_dataset.csv",       "products.csv"],
+    "sellers":        ["olist_sellers_dataset.csv",        "sellers.csv"],
+    "geolocation":    ["olist_geolocation_dataset.csv",    "geolocation.csv"],
+}
+
+
+def _run_local_ingest_gen():
+    """Generator: CSV from data/ → BQ olist_raw → dbt Silver+Gold. No GCS or Meltano."""
+    import re as _re
+    _ANSI = _re.compile(r"\x1b\[[0-9;]*m")
+    log: list[str] = []
+
+    def _l(msg: str):
+        log.append(msg)
+
+    _l(f"{_ts()} === Local CSV Ingest Start ===")
+    yield "\n".join(log)
+
+    # ── Read GCP config ──────────────────────────────────────
+    try:
+        import yaml
+        cfg_path = _PROJECT_ROOT / "dashboards/lik_hong/config/gcp_config.yaml"
+        with open(cfg_path) as _f:
+            cfg = yaml.safe_load(_f)
+        project_id  = cfg["project_id"]
+        auth_method = cfg.get("auth_method", "adc").lower().strip()
+        _l(f"{_ts()} ✓ Config loaded — project: {project_id}")
+    except Exception as e:
+        _l(f"{_ts()} ✗ Config error: {e}")
+        yield "\n".join(log); return
+
+    yield "\n".join(log)
+
+    # ── BigQuery client ──────────────────────────────────────
+    try:
+        from google.cloud import bigquery as _bq
+        if auth_method == "service_account":
+            from google.oauth2 import service_account as _sa
+            _key = _PROJECT_ROOT / "dashboards/lik_hong/config/service_account.json"
+            _creds = _sa.Credentials.from_service_account_file(str(_key))
+            bq = _bq.Client(project=project_id, credentials=_creds)
+        else:
+            bq = _bq.Client(project=project_id)
+        bq.create_dataset(f"{project_id}.olist_raw", exists_ok=True)
+        _l(f"{_ts()} ✓ BQ client ready")
+    except Exception as e:
+        _l(f"{_ts()} ✗ BQ client error: {e}")
+        yield "\n".join(log); return
+
+    yield "\n".join(log)
+
+    # ── Load each CSV ────────────────────────────────────────
+    import pandas as _pd
+    from google.cloud import bigquery as _bq
+    data_dir = _PROJECT_ROOT / "data"
+    loaded = 0
+
+    for entity, filenames in _ENTITY_FILES.items():
+        csv_path = next(
+            (data_dir / fn for fn in filenames if (data_dir / fn).exists()), None
+        )
+        if csv_path is None:
+            _l(f"  ⚠  {entity}: no CSV found in data/ — skipping")
+            yield "\n".join(log)
+            continue
+        _l(f"  Loading {entity} ← {csv_path.name} …")
+        yield "\n".join(log)
+        try:
+            df = _pd.read_csv(csv_path, low_memory=False)
+            table_id = f"{project_id}.olist_raw.{entity}"
+            job_cfg  = _bq.LoadJobConfig(
+                write_disposition=_bq.WriteDisposition.WRITE_TRUNCATE,
+                autodetect=True,
+            )
+            job = bq.load_table_from_dataframe(df, table_id, job_config=job_cfg)
+            job.result()
+            _l(f"  ✓  {entity} → {table_id}  ({len(df):,} rows)")
+            loaded += 1
+        except Exception as e:
+            _l(f"  ✗  {entity}: {e}")
+        yield "\n".join(log)
+
+    if loaded == 0:
+        _l(f"{_ts()} ✗ No CSVs loaded — check data/ directory.")
+        yield "\n".join(log); return
+
+    # ── dbt Silver + Gold ────────────────────────────────────
+    _l(f"\n{_ts()} Running dbt full-refresh …")
+    yield "\n".join(log)
+    try:
+        dbt_dir = str(_PROJECT_ROOT / "pipelines/lik_hong/batch/dbt")
+        key_abs  = str(_PROJECT_ROOT / "dashboards/lik_hong/config/service_account.json")
+        env = {**os.environ, "DBT_KEYFILE": key_abs}
+        result = subprocess.run(
+            ["dbt", "run", "--profiles-dir", dbt_dir, "--project-dir", dbt_dir,
+             "--full-refresh"],
+            cwd=dbt_dir, capture_output=True, text=True, timeout=600, env=env,
+        )
+        out = _ANSI.sub("", (result.stdout or "") + (result.stderr or ""))
+        for line in out.splitlines()[-12:]:
+            _l(f"  {line}")
+        if result.returncode == 0:
+            _l(f"{_ts()} ✓ dbt complete — Gold tables ready.")
+        else:
+            _l(f"{_ts()} ✗ dbt failed (exit {result.returncode})")
+    except FileNotFoundError:
+        _l(f"{_ts()} ⚠  dbt not installed — Silver/Gold skipped.")
+    except Exception as e:
+        _l(f"{_ts()} ✗ dbt error: {e}")
+
+    _l(f"\n{_ts()} === Local Ingest Complete ({loaded} entities loaded) ===")
+    yield "\n".join(log)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -446,6 +595,21 @@ with gr.Blocks(analytics_enabled=False, title="Data Pipeline Management") as das
         "Coordinate with the team before running destructive operations.",
         level="warn",
     )
+
+    # ── 0. Quick Local Ingest ─────────────────────────────────────
+    gr.HTML("""<div class="pipe-section">
+        <div class="pipe-hdr">0 · Quick Local Ingest  <span style="color:rgba(255,200,100,0.4);font-size:10px;letter-spacing:1px">DEV ONLY</span></div>
+        <div class="pipe-sub">Reads CSVs from <code>data/</code> → BQ <code>olist_raw</code> → dbt Silver+Gold.
+        Bypasses Meltano and GCS. Use for rapid dashboard testing without cloud ingestion.</div>
+    </div>""")
+    with gr.Row(elem_classes=["admin-btn-row"]):
+        local_ingest_btn = gr.Button("⚡  Local CSV → BQ + dbt", variant="primary", scale=2)
+    local_log = gr.Textbox(
+        label="Local Ingest Log", lines=8, interactive=False,
+        placeholder="Click to load CSVs from data/ directly into BigQuery…",
+        elem_classes=["log-output"],
+    )
+    local_ingest_btn.click(fn=_run_local_ingest_gen, outputs=local_log)
 
     # ── 1. Batch Ingestion Pipeline ───────────────────────────────
     gr.HTML("""<div class="pipe-section">
@@ -498,9 +662,11 @@ with gr.Blocks(analytics_enabled=False, title="Data Pipeline Management") as das
                 Auto-stops at <strong>{GCS_STREAMING_CAP_MB} MB</strong> GCS cap.</div>
             </div>""")
             with gr.Row(elem_classes=["admin-btn-row"]):
-                start_btn  = gr.Button("▶ Start Agent", variant="primary",   scale=2)
-                stop_btn   = gr.Button("■ Stop Agent",  variant="stop",       scale=2)
-                cap_btn    = gr.Button("⚖ Check Cap",   variant="secondary",  scale=1)
+                start_btn      = gr.Button("▶ Start Agent",       variant="primary",   scale=2)
+                stop_btn       = gr.Button("■ Stop Agent",        variant="stop",       scale=2)
+                cap_btn        = gr.Button("⚖ Check Cap",         variant="secondary",  scale=1)
+            with gr.Row(elem_classes=["admin-btn-row"]):
+                load_cache_btn = gr.Button("⚡ Load Local Cache",  variant="secondary",  scale=2)
             sim_status = gr.Textbox(
                 label="Status", lines=1, max_lines=2, interactive=False,
                 elem_classes=["log-output"],
@@ -510,7 +676,8 @@ with gr.Blocks(analytics_enabled=False, title="Data Pipeline Management") as das
             sim_timer.tick(fn=_build_live_chart, outputs=sim_chart)
             start_btn.click(fn=action_start_simulator,     outputs=sim_status)
             stop_btn.click( fn=action_stop_simulator,      outputs=sim_status)
-            cap_btn.click(  fn=action_check_streaming_cap, outputs=sim_status)
+            cap_btn.click(      fn=action_check_streaming_cap, outputs=sim_status)
+            load_cache_btn.click(fn=action_load_local_cache,   outputs=sim_status)
 
         # ── 3. Cache Management ───────────────────────────────────
         with gr.Column(scale=1):
