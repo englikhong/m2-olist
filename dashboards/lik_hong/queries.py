@@ -103,7 +103,7 @@ def get_churn_scores(client: bigquery.Client, cfg: dict, limit: int = 20):
     FROM {dim} c
     JOIN {fact} f USING (customer_id)
     GROUP BY 1, 2
-    HAVING DATE_DIFF((SELECT MAX(DATE(order_purchase_timestamp)) FROM {fact}), MAX(DATE(f.order_purchase_timestamp)), DAY) > 180
+    HAVING DATE_DIFF(CURRENT_DATE(), MAX(DATE(f.order_purchase_timestamp)), DAY) > 180
     ORDER BY days_inactive DESC
     LIMIT @limit
     """
@@ -146,8 +146,8 @@ def get_kpi_summary(client: bigquery.Client, cfg: dict) -> dict:
     sql = f"""
     SELECT
         COUNT(DISTINCT customer_id)                                              AS total_customers,
-        COUNTIF(DATE_DIFF((SELECT MAX(DATE(order_purchase_timestamp)) FROM {fact}), last_order_date, DAY) < 90)  AS active_90d,
-        COUNTIF(DATE_DIFF((SELECT MAX(DATE(order_purchase_timestamp)) FROM {fact}), last_order_date, DAY) > 180) AS at_risk_180d,
+        COUNTIF(DATE_DIFF(CURRENT_DATE(), last_order_date, DAY) < 90)           AS active_90d,
+        COUNTIF(DATE_DIFF(CURRENT_DATE(), last_order_date, DAY) > 180)          AS at_risk_180d,
         ROUND(AVG(avg_review_score), 2)                                          AS avg_review_score,
         ROUND(SUM(total_revenue), 0)                                             AS total_revenue
     FROM (
@@ -174,7 +174,7 @@ def search_customers(client: bigquery.Client, cfg: dict, id_pattern: str, segmen
     WITH base AS (
         SELECT
             c.customer_unique_id,
-            DATE_DIFF((SELECT MAX(DATE(order_purchase_timestamp)) FROM {fact}), MAX(DATE(f.order_purchase_timestamp)), DAY) AS days_inactive,
+            DATE_DIFF(CURRENT_DATE(), MAX(DATE(f.order_purchase_timestamp)), DAY) AS days_inactive,
             COUNT(DISTINCT f.order_id) AS total_orders
         FROM {dim} c
         JOIN {fact} f USING (customer_id)
