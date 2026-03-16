@@ -71,7 +71,7 @@ def _fig_radar_c360():
 def _fig_donut():
     fig = go.Figure(go.Pie(
         labels=["Credit Card", "Boleto", "Voucher", "Debit"],
-        values=[76795, 19784, 5775, 1529], hole=0.55,
+        values=[75618, 19539, 3745, 1515], hole=0.55,
         marker=dict(colors=[AMBER, "#CC7000", GOLD, "#996000"],
                     line=dict(color="rgba(0,0,0,0.5)", width=1)),
         textinfo="label+percent", textfont=dict(size=8, color=GOLD),
@@ -430,6 +430,9 @@ def _home_header(state: str = "not_run") -> str:
     """
 
 
+_PORT_TO_TAB = {"7862": 1, "7863": 2, "7864": 3, "7865": 4, "7866": 5, "7867": 6}
+
+
 def _panel_header(title: str, port: str, metrics: list, owner: str = "", badge: str = "batch") -> str:
     """Panel header — title, owner, launch link, metrics, badge."""
     mh = "".join(
@@ -448,6 +451,12 @@ def _panel_header(title: str, port: str, metrics: list, owner: str = "", badge: 
         f'<span style="font-size:8px;color:rgba(255,140,0,0.65);margin-left:4px;">{owner}</span>'
         if owner else ""
     )
+    tab_idx = _PORT_TO_TAB.get(port, 0)
+    launch_js = (
+        f"var tabs=document.querySelectorAll('button[role=tab]');"
+        f"if(tabs[{tab_idx}])tabs[{tab_idx}].click();"
+        f"window.scrollTo(0,0);"
+    )
     return f"""<div class="dh">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
             <div style="display:flex;align-items:center;gap:6px;">
@@ -456,7 +465,7 @@ def _panel_header(title: str, port: str, metrics: list, owner: str = "", badge: 
                 {owner_html}
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
-                <a href="http://localhost:{port}" class="launch-link">LAUNCH ↗</a>
+                <a href="javascript:void(0)" onclick="{launch_js}" class="launch-link">LAUNCH ↗</a>
                 <span class="live-dot"></span>
             </div>
         </div>
@@ -524,7 +533,7 @@ with gr.Blocks(analytics_enabled=False, title="Olist Data Product") as dashboard
             with gr.Group(elem_classes=["panel-group"]):
                 gr.HTML(_panel_header(
                     "PAYMENT ANALYTICS", "7863",
-                    [("Revenue", "R$13.6M"), ("Avg Instal.", "3.7×"), ("CC Share", "73.9%")],
+                    [("Revenue", "R$15.7M"), ("Avg Instal.", "3.5×"), ("CC Share", "78.5%")],
                     badge="batch",
                 ))
                 gr.Plot(_fig_donut(), show_label=False)

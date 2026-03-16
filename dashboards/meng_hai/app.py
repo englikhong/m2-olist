@@ -4,16 +4,26 @@ dashboards/meng_hai/app.py — Payment Analytics
 Owner: Meng Hai
 Standalone: python dashboards/meng_hai/app.py
 Exports: dashboard (gr.Blocks)
-
-TODO: Build your dashboard here.
-      See dashboards/lik_hong/app.py as a reference implementation.
-      Queries go in dashboards/meng_hai/queries.py.
 """
 
 import gradio as gr
 
-from shared.theme import olist_theme, CUSTOM_CSS, COLORS, FONT_HEAD
-from shared.components import page_header, section_title, alert_box
+from shared.theme import olist_theme, CUSTOM_CSS, FONT_HEAD
+from shared.components import page_header, section_title
+from dashboards.meng_hai.charts import (
+    load_kpis,
+    load_revenue_by_type,
+    load_monthly_trend,
+    load_instalment_dist,
+    load_cancellation_trend,
+    load_payment_overview,
+    load_payment_by_geo,
+    load_payment_by_product,
+    load_payment_by_price_band,
+    load_geo_bubble_map,
+)
+
+# ── Dashboard UI ──────────────────────────────────────────────
 
 with gr.Blocks(analytics_enabled=False) as dashboard:
 
@@ -23,38 +33,62 @@ with gr.Blocks(analytics_enabled=False) as dashboard:
         icon="💳",
     )
 
-    alert_box(
-        "This is your dashboard — implement it in this file and dashboards/meng_hai/queries.py.",
-        level="info",
-    )
+    # KPI row
+    kpi_html = gr.HTML()
 
-    section_title("Gold Tables You Need", accent="gold")
-    gr.HTML(f"""
-    <div class="olist-card" style="font-family:'Space Mono',monospace;
-                                   font-size:0.85rem;color:{COLORS['text_secondary']};
-                                   line-height:1.9">
-        <span style="color:{COLORS['orange']};font-weight:600">Fact_Orders</span>
-        &nbsp;— order-level facts (status, timestamps, payment_value, category, …)<br>
-        <span style="color:{COLORS['orange']};font-weight:600">Dim_Payments</span>
-        &nbsp;— payment_type, payment_installments, payment_value per order<br><br>
-        <span style="color:{COLORS['text_muted']}">
-        Reference: pipelines/meng_hai/batch/README.md · queries stub: queries.py
-        </span>
-    </div>
-    """)
+    # Row 1: Revenue donut + Monthly trend
+    with gr.Row():
+        with gr.Column(scale=1):
+            section_title("Revenue by Payment Type", accent="orange")
+            revenue_type_chart = gr.Plot()
+        with gr.Column(scale=2):
+            section_title("Monthly Revenue Trend", accent="gold")
+            monthly_chart = gr.Plot()
 
-    section_title("Suggested Charts", accent="orange")
-    gr.HTML(f"""
-    <div class="olist-card" style="color:{COLORS['text_secondary']};font-size:0.875rem;
-                                   line-height:1.8">
-        <b style="color:{COLORS['text_primary']}">Chart ideas to get started:</b><br>
-        · Revenue by payment type (bar or donut)<br>
-        · Instalment distribution for credit cards (bar)<br>
-        · Monthly revenue trend by payment type (stacked area)<br>
-        · Average Order Value by payment method (bar)<br>
-        · Monthly cancellation rate (line)
-    </div>
-    """)
+    # Row 2: Instalment dist + Cancellation rate
+    with gr.Row():
+        with gr.Column(scale=1):
+            section_title("Credit Card Instalments", accent="green")
+            instalment_chart = gr.Plot()
+        with gr.Column(scale=1):
+            section_title("Cancellation Rate", accent="red")
+            cancel_chart = gr.Plot()
+
+    # Row 3: Payment overview + Geography
+    with gr.Row():
+        with gr.Column(scale=1):
+            section_title("Payment Method Overview", accent="orange")
+            overview_chart = gr.Plot()
+        with gr.Column(scale=1):
+            section_title("Payment by Customer State", accent="gold")
+            geo_chart = gr.Plot()
+
+    # Row 4: Product category + Price band
+    with gr.Row():
+        with gr.Column(scale=1):
+            section_title("Payment by Product Category", accent="green")
+            product_chart = gr.Plot()
+        with gr.Column(scale=1):
+            section_title("Payment by Price Band", accent="orange")
+            price_band_chart = gr.Plot()
+
+    # Row 5: Geo Bubble Map (full-width)
+    with gr.Row():
+        with gr.Column():
+            section_title("Payment Geography — Bubble Map", accent="gold")
+            geo_bubble_chart = gr.Plot()
+
+    # Wire up loaders
+    dashboard.load(fn=load_kpis, outputs=kpi_html)
+    dashboard.load(fn=load_revenue_by_type, outputs=revenue_type_chart)
+    dashboard.load(fn=load_monthly_trend, outputs=monthly_chart)
+    dashboard.load(fn=load_instalment_dist, outputs=instalment_chart)
+    dashboard.load(fn=load_cancellation_trend, outputs=cancel_chart)
+    dashboard.load(fn=load_payment_overview, outputs=overview_chart)
+    dashboard.load(fn=load_payment_by_geo, outputs=geo_chart)
+    dashboard.load(fn=load_payment_by_product, outputs=product_chart)
+    dashboard.load(fn=load_payment_by_price_band, outputs=price_band_chart)
+    dashboard.load(fn=load_geo_bubble_map, outputs=geo_bubble_chart)
 
 
 if __name__ == "__main__":

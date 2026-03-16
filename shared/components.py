@@ -22,7 +22,9 @@ def page_header(title: str, subtitle: str = "", icon: str = "") -> gr.HTML:
     sub_html = f'<p class="page-subtitle">{subtitle}</p>' if subtitle else ""
     icon_html = f'<span style="margin-right:10px;font-size:1.5rem">{icon}</span>' if icon else ""
     home_link = (
-        '<a href="http://localhost:7861"'
+        '<a href="javascript:void(0)"'
+        ' onclick="var tabs=document.querySelectorAll(\'button[role=tab]\');'
+        'if(tabs[0])tabs[0].click();window.scrollTo(0,0);"'
         ' style="display:inline-flex;align-items:center;gap:6px;'
         'color:#FF8C00;text-decoration:none;font-size:0.8rem;'
         'border:1px solid rgba(255,140,0,0.35);border-radius:5px;'
