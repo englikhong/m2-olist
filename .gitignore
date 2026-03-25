@@ -49,3 +49,5 @@ flagged/
 
 # Runtime logs
 logs/
+dashboards/lanson/config/gcp_config.yaml
+dashboards/lanson/config/service_account.json
