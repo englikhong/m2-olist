@@ -1,0 +1,116 @@
+version: 2
+
+models:
+  - name: Fact_Orders
+    description: >
+      Seller-performance fact table. One row per order-seller pair so metrics
+      can be filtered and grouped by seller_id directly.
+    columns:
+      - name: order_seller_key
+        description: "Surrogate key: order_id + seller_id."
+        tests:
+          - unique
+          - not_null
+      - name: order_id
+        description: "Olist order identifier."
+        tests:
+          - not_null
+      - name: seller_id
+        description: "Foreign key to Dim_Sellers."
+        tests:
+          - not_null
+      - name: customer_id
+        description: "Olist customer identifier."
+      - name: order_status
+        description: "Current order status (delivered, shipped, cancelled, …)."
+      - name: order_purchase_timestamp
+        description: "UTC timestamp when the order was placed."
+      - name: order_approved_at
+        description: "UTC timestamp when payment was approved."
+      - name: order_delivered_carrier_date
+        description: "UTC timestamp when the order was handed to the carrier."
+      - name: order_delivered_customer_date
+        description: "UTC timestamp when the customer received the order."
+      - name: order_estimated_delivery_date
+        description: "Estimated delivery date given to the customer at purchase."
+      - name: delivery_delay_days
+        description: "Days between actual and estimated delivery (positive = late)."
+      - name: on_time_delivery
+        description: "TRUE if on time, FALSE if late, NULL if not yet delivered."
+      - name: item_count
+        description: "Number of items this seller contributed to the order."
+      - name: items_total
+        description: "Sum of item prices from this seller in this order."
+      - name: freight_total
+        description: "Sum of freight charges from this seller in this order."
+      - name: payment_value
+        description: "Total payment value for the order (order-level, not per-seller)."
+      - name: payment_type
+        description: "Primary payment method."
+      - name: payment_installments
+        description: "Number of payment installments."
+      - name: review_score
+        description: "Customer review score (1–5) for the order."
+      - name: review_comment
+        description: "Free-text review comment."
+
+  - name: Dim_Sellers
+    description: >
+      Seller dimension with performance aggregates, geolocation, and insight flags.
+      Metrics are derived from Fact_Orders for consistency.
+    columns:
+      - name: seller_id
+        description: "Unique seller identifier."
+        tests:
+          - unique
+          - not_null
+      - name: seller_city
+        description: "City where the seller is located."
+      - name: seller_state
+        description: "Brazilian state code of the seller."
+      - name: latitude
+        description: "Approximate latitude derived from seller zip code prefix."
+      - name: longitude
+        description: "Approximate longitude derived from seller zip code prefix."
+      - name: total_orders
+        description: "Total distinct orders fulfilled by this seller."
+      - name: total_revenue
+        description: "Sum of item prices (items_total) sold by this seller across all orders."
+      - name: avg_order_value
+        description: "Average revenue per order for this seller (total_revenue / total_orders)."
+      - name: avg_review_score
+        description: "Average customer review score for orders handled by this seller."
+      - name: on_time_rate
+        description: "Fraction of delivered orders that arrived on or before the estimated date."
+      - name: unique_products
+        description: "Number of distinct products ever listed by this seller."
+      - name: power_seller
+        description: "TRUE if seller is in the top 10% by revenue AND avg_review_score >= 4.0."
+      - name: at_risk
+        description: "TRUE if avg_review_score < 3.0 OR on_time_rate < 0.70."
+
+  - name: Dim_Reviews
+    description: "Review dimension — one row per review, joined to order purchase context."
+    columns:
+      - name: review_id
+        description: "Unique review identifier."
+        tests:
+          - not_null
+      - name: order_id
+        description: "Foreign key to Fact_Orders."
+      - name: review_score
+        description: "Customer satisfaction score 1 (worst) – 5 (best)."
+      - name: review_comment_title
+        description: "Short title of the review."
+      - name: review_comment_message
+        description: "Full text of the review."
+      - name: review_creation_date
+        description: "Timestamp when the review form was sent to the customer."
+      - name: review_answer_timestamp
+        description: "Timestamp when the customer submitted the review."
+      - name: response_hours
+        description: "Hours between review form sent and customer response."
+      - name: customer_id
+        description: "Customer identifier joined from stg_orders."
+      - name: order_purchase_timestamp
+        description: "Original purchase timestamp joined from stg_orders."

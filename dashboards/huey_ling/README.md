@@ -1,11 +1,20 @@
 # Seller Performance — Huey Ling
 
 ## Domain
-- Seller leaderboard by revenue, fulfilment speed, and review score
-- Delivery latency: actual vs estimated (distribution chart)
-- Review score heatmap by seller state
-- At-risk seller flagging (low rating OR high late delivery)
-- Seller geographic coverage
+Create dashboard for Seller Performance with the following:
+Metrics: 
+- Revenue per seller
+- Orders per seller
+- Average order value per seller
+- Seller geographic distribution
+Dashboard Views: 
+- Top sellers leaderboard by revenue, review score
+- Seller sales distribution
+- Seller location map
+Insights: 
+- Marketplace concentration
+- Identification of power sellers
+- At-risk seller flag: sellers with low rating
 
 ## Gold Tables Used
 - `Dim_Sellers`
@@ -17,7 +26,7 @@
 2. Fill in your GCP `project_id`, `dataset`, and auth method
 3. See `quick-setup.md` for full instructions
 
-## Run standalone
+## Gradio Dashboard - Run standalone
 ```bash
 python dashboards/huey_ling/app.py
 # Opens at http://localhost:7866

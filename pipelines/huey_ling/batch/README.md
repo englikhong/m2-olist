@@ -24,21 +24,20 @@ Loads Olist seller and order data into your personal GCP BigQuery Gold dataset.
 
 ### 1. Set up your GCP project & auth
 
-Follow **Steps 1–5** in `quick-setup.md`.
+Follow **Steps 1–5** in `quick-setup.md` - Done.
 
 ### 2. Configure Meltano
 
-Copy the reference config from `pipelines/lik_hong/batch/meltano/` and update:
-- GCS bucket name → your bucket (`olist-bronze-<yourname>`)
-- BigQuery project → your `project_id`
-- Source files: `olist_orders_dataset.csv`, `olist_sellers_dataset.csv`,
-  `olist_order_reviews_dataset.csv`
+- GCS bucket name → my-shl-project-olist-bronze
+- BigQuery project → my-shl-project-olist
+- Source files: Extracts all Olist CSVs and loads raw Parquet files into GCS Bronze bucket.
 
 ### 3. Run Meltano (CSV → GCS Bronze)
 
 ```bash
 cd pipelines/huey_ling/batch/meltano
-meltano run tap-spreadsheets-anywhere target-gcs
+meltano install   # first time only
+meltano run tap-csv target-gcs
 ```
 
 Meltano tracks a high-water mark — re-running will not re-ingest already-loaded files.

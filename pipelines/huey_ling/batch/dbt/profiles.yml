@@ -1,0 +1,20 @@
+olist_huey_ling:
+  target: prod
+  outputs:
+    prod:
+      type: bigquery
+      method: service-account
+      project: my-shl-project-olist
+      dataset: olist_gold
+      location: US
+      keyfile: "{{ env_var('DBT_KEYFILE', '/home/shl/m2-olist/dashboards/huey_ling/config/service_account.json') }}"
+      threads: 4
+      timeout_seconds: 300
+    oauth:
+      type: bigquery
+      method: oauth
+      project: my-shl-project-olist
+      dataset: olist_gold
+      location: US
+      threads: 4
+      timeout_seconds: 300
