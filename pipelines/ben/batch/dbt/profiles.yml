@@ -4,7 +4,7 @@ olist_ben:
     prod:
       type: bigquery
       method: oauth
-      project: olist-dsai-491108
+      project: olist-dsai-491516
       dataset: olist_gold_ben
       location: US
       threads: 4

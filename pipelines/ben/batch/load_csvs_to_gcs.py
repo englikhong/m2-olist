@@ -9,7 +9,7 @@ from google.cloud import storage
 
 def load_csvs_to_gcs():
     """Load CSV files from data/ to GCS bucket"""
-    gcs_client = storage.Client(project="olist-dsai-491108")
+    gcs_client = storage.Client(project="olist-dsai-491516")
     bucket = gcs_client.bucket("olist-dsai-ben-bronze")
     try:
         bucket.create()

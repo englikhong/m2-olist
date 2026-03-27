@@ -18,15 +18,15 @@ def get_kpi_summary(client, cfg):
     Returns: single-row DataFrame with columns: total_revenue, total_orders, unique_products, avg_review_score
     """
     fact = qualified_table(cfg, "Fact_Orders")
-    dim_products = qualified_table(cfg, "Dim_Products")
 
     sql = f"""
     SELECT
         ROUND(SUM(f.payment_value), 2)        AS total_revenue,
         COUNT(DISTINCT f.order_id)             AS total_orders,
-        COUNT(DISTINCT f.product_id)           AS unique_products,
+        COUNT(DISTINCT oi.product_id)          AS unique_products,
         ROUND(AVG(f.review_score), 2)          AS avg_review_score
     FROM {fact} f
+    LEFT JOIN `{cfg['project_id']}.olist_silver_ben.stg_order_items` oi USING (order_id)
     WHERE f.order_status NOT IN ('canceled', 'unavailable')
     """
     return run_query(client, sql)
@@ -66,16 +66,18 @@ def get_top_products(client, cfg, limit: int = 20):
     """
     fact = qualified_table(cfg, "Fact_Orders")
     products = qualified_table(cfg, "Dim_Products")
+    items = f"`{cfg['project_id']}.olist_silver_ben.stg_order_items`"
 
     sql = f"""
     SELECT
-        f.product_id,
+        oi.product_id,
         COALESCE(p.product_category_name_english, 'Unknown')  AS category,
         p.product_weight_g,
         COUNT(DISTINCT f.order_id)                             AS orders,
         ROUND(SUM(f.payment_value), 2)                         AS revenue
     FROM {fact} f
-    LEFT JOIN {products} p USING (product_id)
+    LEFT JOIN {items} oi USING (order_id)
+    LEFT JOIN {products} p ON oi.product_id = p.product_id
     WHERE f.order_status NOT IN ('canceled', 'unavailable')
     GROUP BY 1, 2, 3
     ORDER BY revenue DESC
@@ -115,6 +117,8 @@ def get_monthly_category_trend(client, cfg, category: str):
     Expected columns:
         month (str, 'YYYY-MM'), orders (int), revenue (float)
     """
+    from google.cloud import bigquery
+
     fact = qualified_table(cfg, "Fact_Orders")
 
     sql = f"""
@@ -128,7 +132,8 @@ def get_monthly_category_trend(client, cfg, category: str):
     GROUP BY 1
     ORDER BY 1 ASC
     """
-    return run_query(client, sql, [{"name": "category", "parameterType": {"type": "STRING"}, "parameterValue": {"value": category}}])
+    params = [bigquery.ScalarQueryParameter("category", "STRING", category)]
+    return run_query(client, sql, params)
 
 
 def get_category_revenue_vs_reviews(client, cfg):
