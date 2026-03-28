@@ -357,7 +357,7 @@ def load_category_heatmap():
 
         # Create pivot table for heatmap
         heatmap_data = df.groupby(
-            ["revenue_quartile", "review_quartile"], as_index=False
+            ["revenue_quartile", "review_quartile"], as_index=False, observed=True
         )["order_volume"].sum()
 
         # Pivot for matrix format
@@ -365,7 +365,8 @@ def load_category_heatmap():
             index="revenue_quartile",
             columns="review_quartile",
             values="order_volume",
-            fill_value=0
+            fill_value=0,
+            observed=True,
         )
 
         fig = px.imshow(

@@ -417,15 +417,11 @@ def _traffic_light_pill(state: str = "not_run") -> str:
 
 
 def _home_header(state: str = "not_run") -> str:
-    """Page header with pipeline status pill aligned to the right."""
-    pill = _traffic_light_pill(state)
-    return f"""
-    <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;gap:16px;">
-        <div>
-            <h1 class="page-title"><span style="margin-right:10px;font-size:1.5rem">🏠</span>Brazil E-commerce Intelligence</h1>
-            <p class="page-subtitle">Six Domains · One Data Architecture</p>
-        </div>
-        <div style="flex-shrink:0;">{pill}</div>
+    """Page header."""
+    return """
+    <div class="page-header">
+        <h1 class="page-title"><span style="margin-right:10px;font-size:1.5rem">🏠</span>Brazil E-commerce Intelligence</h1>
+        <p class="page-subtitle">Six Domains · One Data Architecture</p>
     </div>
     """
 

@@ -27,8 +27,6 @@ _ALL_CSS = CUSTOM_CSS + _HOME_CSS + _ADMIN_CSS
 with gr.Blocks(
     title="Olist Data Product",
     analytics_enabled=False,
-    theme=olist_theme,
-    css=_ALL_CSS,
 ) as app:
 
     with gr.Tabs() as tabs:
@@ -69,5 +67,7 @@ if __name__ == "__main__":
         share=share,
         show_error=True,
         favicon_path=None,
+        theme=olist_theme,
+        css=_ALL_CSS,
         head=FONT_HEAD,
     )

@@ -26,8 +26,9 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-# ── GCP config path (relative to project root) ────────────────
-_CONFIG_PATH = Path("dashboards/lik_hong/config/gcp_config.yaml")
+# ── GCP config path (absolute, resolved from this file's location) ───────────
+_CONFIG_PATH = Path(__file__).resolve().parents[3] / "dashboards/lik_hong/config/gcp_config.yaml"
+_CONFIG_DIR  = _CONFIG_PATH.parent
 
 
 import re as _re
@@ -78,6 +79,60 @@ def run_meltano():
         sys.exit(1)
 
 
+# ── Step 0: Clear Bronze / Silver / Gold (full refresh only) ──
+
+def clear_for_full_refresh():
+    """Delete all GCS Bronze blobs and drop BQ Bronze/Silver/Gold tables."""
+    log("Step 0 — Clearing Bronze (GCS + BQ), Silver and Gold for full refresh...")
+    try:
+        from google.cloud import bigquery, storage as gcs
+    except ImportError:
+        log("✗ google-cloud-bigquery / google-cloud-storage not installed.")
+        sys.exit(1)
+
+    cfg         = _read_gcp_config()
+    project_id  = cfg["project_id"]
+    bucket_name = cfg.get("gcs_bronze_bucket", f"{project_id}-bronze")
+    prefix      = "olist/raw/"
+    auth_method = cfg.get("auth_method", "adc").lower().strip()
+
+    if auth_method == "service_account":
+        from google.oauth2 import service_account as sa_module
+        key_file = (_CONFIG_DIR / cfg.get("key_path", "service_account.json")).resolve()
+        if not key_file.exists():
+            raise FileNotFoundError(f"Service account key not found: {key_file}")
+        _creds = sa_module.Credentials.from_service_account_file(
+            str(key_file),
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
+        bq_client  = bigquery.Client(project=project_id, credentials=_creds)
+        gcs_client = gcs.Client(project=project_id, credentials=_creds)
+    else:
+        bq_client  = bigquery.Client(project=project_id)
+        gcs_client = gcs.Client(project=project_id)
+
+    # 1. Delete all blobs in GCS Bronze under olist/raw/
+    blobs = list(gcs_client.list_blobs(bucket_name, prefix=prefix))
+    if blobs:
+        bucket = gcs_client.bucket(bucket_name)
+        bucket.delete_blobs(blobs)
+        log(f"  ✓ Deleted {len(blobs)} blob(s) from gs://{bucket_name}/{prefix}")
+    else:
+        log(f"  ✓ GCS Bronze already empty at gs://{bucket_name}/{prefix}")
+
+    # 2. Drop BQ Bronze / Silver / Gold datasets (recreate empty)
+    for dataset_id in ["olist_raw", "olist_silver", "olist_gold"]:
+        full_id = f"{project_id}.{dataset_id}"
+        try:
+            bq_client.delete_dataset(full_id, delete_contents=True, not_found_ok=True)
+            bq_client.create_dataset(full_id, exists_ok=True)
+            log(f"  ✓ Cleared BQ dataset {full_id}")
+        except Exception as exc:
+            log(f"  ⚠ Could not clear {full_id}: {exc}")
+
+    log("✓ Clear complete — Bronze/Silver/Gold wiped.")
+
+
 # ── Step 2: GCS Bronze → BQ olist_raw ────────────────────────
 
 def load_gcs_to_bq():
@@ -98,11 +153,9 @@ def load_gcs_to_bq():
 
     if auth_method == "service_account":
         from google.oauth2 import service_account as sa_module
-        from pathlib import Path as _Path
-        key_path = cfg.get("key_path", "")
-        key_file = _Path(key_path)
+        key_file = (_CONFIG_DIR / cfg.get("key_path", "service_account.json")).resolve()
         if not key_file.exists():
-            raise FileNotFoundError(f"Service account key not found: {key_path}")
+            raise FileNotFoundError(f"Service account key not found: {key_file}")
         _creds = sa_module.Credentials.from_service_account_file(
             str(key_file),
             scopes=["https://www.googleapis.com/auth/cloud-platform"],
@@ -124,14 +177,16 @@ def load_gcs_to_bq():
     blobs = list(gcs_client.list_blobs(bucket, prefix=prefix))
 
     for entity in entities:
-        uris = [
-            f"gs://{bucket}/{b.name}"
-            for b in blobs
+        entity_blobs = [
+            b for b in blobs
             if b.name.endswith(".jsonl") and b.name.split("/")[-1].startswith(entity)
         ]
-        if not uris:
+        if not entity_blobs:
             log(f"  ⚠ No JSONL files for '{entity}' in gs://{bucket}/{prefix} — skipping.")
             continue
+        # Use only the latest file to avoid duplicates on reruns
+        latest_blob = max(entity_blobs, key=lambda b: b.time_created)
+        uris = [f"gs://{bucket}/{latest_blob.name}"]
 
         table_id   = f"{project_id}.olist_raw.{entity}"
         job_config = bigquery.LoadJobConfig(
@@ -181,7 +236,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Olist batch pipeline runner")
     parser.add_argument(
         "--step",
-        choices=["meltano", "gcs-to-bq", "dbt", "all"],
+        choices=["clear", "meltano", "gcs-to-bq", "dbt", "all"],
         default="all",
         help="Which step to run (default: all)",
     )
@@ -196,6 +251,8 @@ if __name__ == "__main__":
     log(f"=== Batch Pipeline Start (step={args.step}, mode={args.mode}) ===")
     start = time.time()
 
+    if args.step in ("clear",):
+        clear_for_full_refresh()
     if args.step in ("meltano", "all"):
         run_meltano()
     if args.step in ("gcs-to-bq", "all"):
