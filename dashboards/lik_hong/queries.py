@@ -171,10 +171,13 @@ def search_customers(client: bigquery.Client, cfg: dict, id_pattern: str, segmen
     dim  = qualified_table(cfg, "Dim_Customers")
     sql_pattern = id_pattern.replace("*", "%") if id_pattern else "%"
     sql = f"""
-    WITH base AS (
+    WITH max_date AS (
+        SELECT MAX(DATE(order_purchase_timestamp)) AS ref_date FROM {fact}
+    ),
+    base AS (
         SELECT
             c.customer_unique_id,
-            DATE_DIFF(CURRENT_DATE(), MAX(DATE(f.order_purchase_timestamp)), DAY) AS days_inactive,
+            DATE_DIFF((SELECT ref_date FROM max_date), MAX(DATE(f.order_purchase_timestamp)), DAY) AS days_inactive,
             COUNT(DISTINCT f.order_id) AS total_orders
         FROM {dim} c
         JOIN {fact} f USING (customer_id)

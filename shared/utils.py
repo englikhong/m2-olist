@@ -65,6 +65,9 @@ def get_bq_client(config_path: str) -> bigquery.Client:
                 f"Check {config_path}"
             )
         key_path = Path(key_path)
+        # Resolve relative paths relative to the config file's directory
+        if not key_path.is_absolute():
+            key_path = (Path(config_path).parent / key_path).resolve()
         if not key_path.exists():
             raise FileNotFoundError(
                 f"Service account key not found: {key_path}\n"

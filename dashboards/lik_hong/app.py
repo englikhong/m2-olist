@@ -81,7 +81,7 @@ def build_radar_portfolio():
                              gridcolor="rgba(255,140,0,0.1)",
                              linecolor="rgba(255,140,0,0.2)"),
         ),
-        "height": 608,
+        "height": 407,
     }
     fig.update_layout(**_layout)
     return fig
@@ -171,7 +171,7 @@ def build_radar_customer(profile: dict, customer_id: str):
             borderwidth=1,
             borderpad=10,
         )],
-        "height": 608,
+        "height": 407,
     }
     fig.update_layout(**_layout)
     return fig
@@ -262,6 +262,164 @@ def load_revenue_trend():
             "yaxis2": dict(overlaying="y", side="right", gridcolor="#2A2A2A"),
         }
         fig.update_layout(**_layout)
+        return fig
+    except Exception as e:
+        return error_figure(f"Error: {e}")
+
+
+
+def load_portfolio_bubble():
+    """Bubble chart: segments plotted by Recency × Monetary, sized by customer count."""
+    client, cfg, err = _get_client()
+    if err:
+        return error_figure("GCP not configured — see quick-setup.md")
+    from dashboards.lik_hong.queries import get_portfolio_radar
+    try:
+        df = get_portfolio_radar(client, cfg)
+        if df.empty:
+            return error_figure("No segment data available")
+        seg_colors = {
+            "Champions":           "#00C851",
+            "Loyal Customers":     "#FF8C00",
+            "Recent Customers":    "#FFD700",
+            "Potential Loyalists": "#FFD700",
+            "At Risk":             "#FF4444",
+            "Lost":                "#888888",
+        }
+        max_count = df["customer_count"].max()
+        fig = go.Figure()
+        for _, row in df.iterrows():
+            seg = row["segment"]
+            color = seg_colors.get(seg, "#A0A0A0")
+            count = int(row["customer_count"])
+            size = max(18, min(75, float(count) / max_count * 75))
+            fig.add_trace(go.Scatter(
+                x=[float(row["recency"])],
+                y=[float(row["monetary"])],
+                mode="markers+text",
+                name=seg,
+                text=[seg],
+                textposition="top center",
+                textfont=dict(size=10, color=color),
+                marker=dict(
+                    size=size,
+                    color=color,
+                    opacity=0.82,
+                    line=dict(color="rgba(255,255,255,0.25)", width=1.5),
+                ),
+                hovertemplate=(
+                    f"<b>{seg}</b><br>"
+                    f"Customers: {count:,}<br>"
+                    "Recency: %{x:.0f}<br>"
+                    f"Frequency: {row['frequency']:.0f}<br>"
+                    "Monetary: %{y:.0f}<br>"
+                    f"Satisfaction: {row['satisfaction']:.0f}<br>"
+                    f"Loyalty: {row['loyalty']:.0f}<br>"
+                    f"Diversity: {row['diversity']:.0f}"
+                    "<extra></extra>"
+                ),
+                showlegend=True,
+            ))
+        fig.update_layout(**{
+            **PLOTLY_LAYOUT,
+            "title": "",
+            "xaxis": dict(
+                title="Recency Score (0–100)", range=[-5, 110],
+                gridcolor="rgba(255,140,0,0.10)", zeroline=False,
+                tickfont=dict(size=10, color=COLORS["text_muted"]),
+            ),
+            "yaxis": dict(
+                title="Monetary Score (0–100)", range=[-5, 110],
+                gridcolor="rgba(255,140,0,0.10)", zeroline=False,
+                tickfont=dict(size=10, color=COLORS["text_muted"]),
+            ),
+            "showlegend": True,
+            "legend": dict(
+                font=dict(size=9), bgcolor="rgba(0,0,0,0)",
+                bordercolor="rgba(0,0,0,0)", borderwidth=0,
+                orientation="h",
+                x=0.5, y=-0.18, xanchor="center", yanchor="top",
+                tracegroupgap=4,
+            ),
+            "margin": dict(b=80),
+            "height": 440,
+        })
+        return fig
+    except Exception as e:
+        return error_figure(f"Error: {e}")
+
+
+def load_category_heatmap():
+    """Segment × category purchase frequency heatmap."""
+    client, cfg, err = _get_client()
+    if err:
+        return error_figure("GCP not configured")
+    from dashboards.lik_hong.queries import get_category_affinity
+    try:
+        df = get_category_affinity(client, cfg)
+        if df.empty:
+            return error_figure("No data")
+        pivot = df.pivot_table(
+            index="category", columns="segment",
+            values="purchase_count", fill_value=0,
+        )
+        seg_order = ["Champions", "Loyal Customers", "Recent Customers",
+                     "Potential Loyalists", "At Risk", "Lost"]
+        cols = [c for c in seg_order if c in pivot.columns] + \
+               [c for c in pivot.columns if c not in seg_order]
+        pivot = pivot[cols]
+        fig = go.Figure(go.Heatmap(
+            z=pivot.values,
+            x=pivot.columns.tolist(),
+            y=pivot.index.tolist(),
+            colorscale=[[0,"rgba(20,10,0,0.9)"], [0.5,"rgba(255,140,0,0.6)"],
+                        [1,"rgba(255,215,0,0.95)"]],
+            showscale=True,
+            colorbar=dict(tickfont=dict(size=9, color=COLORS["text_muted"]),
+                          thickness=12),
+            hovertemplate="<b>%{y}</b><br>%{x}: %{z:,} purchases<extra></extra>",
+        ))
+        fig.update_layout(**{
+            **PLOTLY_LAYOUT,
+            "title": "Category Affinity by Segment",
+            "xaxis": dict(tickfont=dict(size=10), tickangle=-20),
+            "yaxis": dict(tickfont=dict(size=10)),
+            "height": 480,
+            "margin": dict(l=160, r=40, t=48, b=60),
+        })
+        return fig
+    except Exception as e:
+        return error_figure(f"Error: {e}")
+
+
+def load_funnel_chart():
+    """Repeat-purchase funnel: 1 → 2 → 3-4 → 5+ orders."""
+    client, cfg, err = _get_client()
+    if err:
+        return error_figure("GCP not configured")
+    from dashboards.lik_hong.queries import get_purchase_funnel
+    try:
+        df = get_purchase_funnel(client, cfg)
+        if df.empty:
+            return error_figure("No data")
+        first = df["customers"].iloc[0]
+        df["conversion_pct"] = (df["customers"] / first * 100).round(1)
+        fig = go.Figure(go.Funnel(
+            y=df["bucket"].tolist(),
+            x=df["customers"].tolist(),
+            textinfo="value+percent initial",
+            textfont=dict(size=13, color="#fff"),
+            marker=dict(
+                color=["#FF8C00", "#FFD700", "#00C851", "#00C851"],
+                line=dict(color="rgba(0,0,0,0.4)", width=1),
+            ),
+            connector=dict(line=dict(color="rgba(255,140,0,0.3)", width=1)),
+        ))
+        fig.update_layout(**{
+            **PLOTLY_LAYOUT,
+            "title": "Repeat Purchase Funnel",
+            "funnelmode": "stack",
+        })
         return fig
     except Exception as e:
         return error_figure(f"Error: {e}")
