@@ -32,9 +32,6 @@ from dashboards.ben.queries import get_category_list
 with gr.Blocks(
     title="📦 Product Analytics — Ben",
     analytics_enabled=False,
-    theme=olist_theme,
-    css=CUSTOM_CSS,
-    head=FONT_HEAD
 ) as dashboard:
 
     page_header(
@@ -69,7 +66,8 @@ with gr.Blocks(
         category_dropdown = gr.Dropdown(
             label="Select Category",
             choices=["All Categories"],  # Will be populated dynamically
-            value="All Categories"
+            value="All Categories",
+            allow_custom_value=True,
         )
 
         trend_chart = gr.Plot(label="Monthly Revenue & Orders")

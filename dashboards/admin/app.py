@@ -206,6 +206,43 @@ def _run_pipeline_gen(mode: str):
     log_lines.append(f"{_ts()} === Batch Pipeline Start (mode={mode}) ===")
     yield emit("running")
 
+    # ── Pre-step: clear Bronze/Silver/Gold before full refresh ──
+    if mode == "full":
+        log_lines.append(f"{_ts()} ▶ Pre-step: Clearing Bronze/Silver/Gold...")
+        yield emit("running", "Clearing Bronze/Silver/Gold")
+        _clear_result: list = []
+
+        def _run_clear():
+            try:
+                r = subprocess.run(
+                    [sys.executable, "pipelines/lik_hong/batch/run_batch.py", "--step", "clear"],
+                    cwd=str(_PROJECT_ROOT), capture_output=True, text=True, timeout=120,
+                )
+                _clear_result.append(r)
+            except subprocess.TimeoutExpired:
+                class _T:
+                    returncode = 1; stdout = ""; stderr = "Clear timed out."
+                _clear_result.append(_T())
+
+        _ct = threading.Thread(target=_run_clear, daemon=True)
+        _ct.start()
+        while _ct.is_alive():
+            yield emit("running", "Clearing Bronze/Silver/Gold")
+            time.sleep(0.4)
+        _ct.join()
+
+        if _clear_result and _clear_result[0].returncode == 0:
+            for line in (_clear_result[0].stdout or "").splitlines()[-6:]:
+                log_lines.append(f"  {line}")
+            log_lines.append(f"{_ts()} ✓ Clear complete")
+        else:
+            if _clear_result:
+                for line in (_clear_result[0].stderr or "").splitlines()[-4:]:
+                    log_lines.append(f"  ERR: {line}")
+            log_lines.append(f"{_ts()} ✗ Clear failed — aborting.")
+            yield emit("error", "Clear failed")
+            return
+
     fr_flag = [] if mode == "cdc" else ["--full-refresh"]
 
     _STAGE_TIMEOUTS = [600, 300, 300, 300, 300, 300]
@@ -235,9 +272,15 @@ def _run_pipeline_gen(mode: str):
         result: list = []
         _timeout = _STAGE_TIMEOUTS[idx]
 
-        def _run(c=effective_cmd, d=cwd, t=_timeout):
+        _env = os.environ.copy()
+        if effective_cmd and effective_cmd[0] == "dbt":
+            _env["DBT_KEYFILE"] = str(
+                _PROJECT_ROOT / "dashboards" / "lik_hong" / "config" / "service_account.json"
+            )
+
+        def _run(c=effective_cmd, d=cwd, t=_timeout, e=_env):
             try:
-                r = subprocess.run(c, cwd=d, capture_output=True, text=True, timeout=t)
+                r = subprocess.run(c, cwd=d, capture_output=True, text=True, timeout=t, env=e)
                 result.append(r)
             except subprocess.TimeoutExpired as e:
                 class _FakeResult:
@@ -353,26 +396,59 @@ def action_check_streaming_cap() -> str:
     return "\n".join(lines)
 
 
+def _ensure_redis_running() -> str:
+    """Start a local redis-server if Redis is not reachable. Returns status line."""
+    try:
+        import redis as redis_lib
+        r = redis_lib.Redis(host="localhost", port=6379, db=0)
+        r.ping()
+        return f"{_ts()} ✓ Redis already running."
+    except Exception:
+        pass
+
+    import shutil
+    redis_bin = shutil.which("redis-server")
+    if not redis_bin:
+        return f"{_ts()} ⚠ redis-server not found — install via: conda install redis-server"
+
+    try:
+        subprocess.Popen(
+            [redis_bin, "--daemonize", "yes", "--logfile", "/tmp/redis-olist.log"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        time.sleep(0.8)   # allow server to start
+        import redis as redis_lib
+        redis_lib.Redis(host="localhost", port=6379).ping()
+        return f"{_ts()} ✓ Redis server started."
+    except Exception as exc:
+        return f"{_ts()} ⚠ Could not start Redis: {exc}"
+
+
 def action_start_simulator() -> str:
     global _simulator_proc, _sim_series, _reader_thread
     with _simulator_lock:
         if _simulator_proc and _simulator_proc.poll() is None:
             return f"{_ts()} ⚠ Simulator already running (PID {_simulator_proc.pid})."
+        redis_status = _ensure_redis_running()
         try:
             _sim_series = []          # reset chart series
             _simulator_proc = subprocess.Popen(
-                [sys.executable, str(_PROJECT_ROOT / "pipelines/lik_hong/realtime/simulator/run_simulator.py")],
+                [sys.executable,
+                 str(_PROJECT_ROOT / "pipelines/lik_hong/realtime/simulator/run_simulator.py")],
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                cwd=str(_PROJECT_ROOT),
             )
-            time.sleep(0.2)
+            time.sleep(0.3)
             if _simulator_proc.poll() is not None:
-                return f"{_ts()} ✗ Simulator exited immediately."
+                out = _simulator_proc.stdout.read() if _simulator_proc.stdout else ""
+                return f"{_ts()} ✗ Simulator exited immediately.\n{out}"
             # Kick off stdout reader thread for live chart
             _reader_thread = threading.Thread(target=_read_simulator_output, daemon=True)
             _reader_thread.start()
             return (
+                f"{redis_status}\n"
                 f"{_ts()} ✓ Simulator started (PID {_simulator_proc.pid}).\n"
-                f"{_ts()}   Publishing events to olist-orders-live…"
+                f"{_ts()}   Writing events to Redis key 'rt:events'…"
             )
         except FileNotFoundError:
             return f"{_ts()} ⚠ Simulator script not found. Build real-time pipeline first."
@@ -582,11 +658,11 @@ _ADMIN_CSS = """
 """
 _GAUGE_CSS = CUSTOM_CSS + _ADMIN_CSS
 
-with gr.Blocks(analytics_enabled=False, title="Data Pipeline Management") as dashboard:
+with gr.Blocks(analytics_enabled=False, title="Cust360 Pipeline Only") as dashboard:
 
     page_header(
         "Admin Control Panel",
-        subtitle="Pipeline management · Cache control · Real-time agent",
+        subtitle="Cust360 pipeline only · Cache control · Real-time agent",
         icon="⚙️",
     )
 
@@ -665,8 +741,6 @@ with gr.Blocks(analytics_enabled=False, title="Data Pipeline Management") as das
                 start_btn      = gr.Button("▶ Start Agent",       variant="primary",   scale=2)
                 stop_btn       = gr.Button("■ Stop Agent",        variant="stop",       scale=2)
                 cap_btn        = gr.Button("⚖ Check Cap",         variant="secondary",  scale=1)
-            with gr.Row(elem_classes=["admin-btn-row"]):
-                load_cache_btn = gr.Button("⚡ Load Local Cache",  variant="secondary",  scale=2)
             sim_status = gr.Textbox(
                 label="Status", lines=1, max_lines=2, interactive=False,
                 elem_classes=["log-output"],
@@ -677,7 +751,7 @@ with gr.Blocks(analytics_enabled=False, title="Data Pipeline Management") as das
             start_btn.click(fn=action_start_simulator,     outputs=sim_status)
             stop_btn.click( fn=action_stop_simulator,      outputs=sim_status)
             cap_btn.click(      fn=action_check_streaming_cap, outputs=sim_status)
-            load_cache_btn.click(fn=action_load_local_cache,   outputs=sim_status)
+
 
         # ── 3. Cache Management ───────────────────────────────────
         with gr.Column(scale=1):
@@ -695,6 +769,21 @@ with gr.Blocks(analytics_enabled=False, title="Data Pipeline Management") as das
             )
             clear_cache_btn.click(fn=action_clear_cache, outputs=cache_log)
 
+    # ── Page-load refresh ─────────────────────────────────────────
+    # Fires every time the browser loads or fully refreshes the page,
+    # re-populating dynamic status components from current process state.
+    def _on_page_load() -> tuple:
+        sim_running = _simulator_proc is not None and _simulator_proc.poll() is None
+        sim_msg = (
+            f"{_ts()} ● Simulator RUNNING (PID {_simulator_proc.pid}) — resumed after page reload."
+            if sim_running
+            else f"{_ts()} ◎ Simulator stopped."
+        )
+        # Batch pipeline: no persistent subprocess is tracked between reloads,
+        # so always reset the gauge status banner to idle on page load.
+        return _pipe_status_html("idle"), sim_msg
+
+    dashboard.load(fn=_on_page_load, outputs=[pipe_status, sim_status])
 
 
 if __name__ == "__main__":
