@@ -32,7 +32,7 @@ _MELTANO_DIR  = Path(__file__).resolve().parent / "meltano"
 _DBT_DIR      = Path(__file__).resolve().parent / "dbt"
 
 # ── Entities loaded by this pipeline ──────────────────────────
-_ENTITIES = ["orders", "customers", "sellers", "geolocation"]
+_ENTITIES = ["orders", "customers", "sellers", "geolocation", "order_items", "order_payments", "order_reviews", "products"]
 
 _ANSI = _re.compile(r"\x1b\[[0-9;]*m")
 

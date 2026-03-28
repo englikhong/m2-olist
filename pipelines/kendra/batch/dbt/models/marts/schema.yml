@@ -156,19 +156,83 @@ models:
           - not_null
 
   # ----------------------------------------------------------
+  # DIM_PRODUCTS
+  # ----------------------------------------------------------
+  - name: dim_products
+    description: >
+      Gold product dimension. One row per product_id.
+      Includes English category name translation.
+    config:
+      materialized: table
+    columns:
+      - name: product_id
+        tests:
+          - not_null
+          - unique
+      - name: product_category_name
+      - name: product_category_name_english
+      - name: product_weight_g
+      - name: volume_litres
+
+  # ----------------------------------------------------------
+  # DIM_REVIEWS
+  # ----------------------------------------------------------
+  - name: dim_reviews
+    description: >
+      Gold review dimension. One row per review_id.
+      Enriched with order context.
+    config:
+      materialized: table
+    columns:
+      - name: review_id
+        tests:
+          - not_null
+      - name: order_id
+        tests:
+          - not_null
+      - name: review_score
+        tests:
+          - not_null
+      - name: response_hours
+        description: Hours between review creation and answer.
+
+  # ----------------------------------------------------------
+  # DIM_PAYMENTS
+  # ----------------------------------------------------------
+  - name: dim_payments
+    description: >
+      Gold payment dimension. One row per payment transaction.
+    config:
+      materialized: table
+    columns:
+      - name: payment_key
+        tests:
+          - not_null
+          - unique
+      - name: order_id
+        tests:
+          - not_null
+      - name: payment_type
+        tests:
+          - not_null
+      - name: payment_value
+        tests:
+          - not_null
+
+  # ----------------------------------------------------------
   # FACT_ORDERS
   # ----------------------------------------------------------
   - name: fact_orders
     description: >
       Gold fact table. Grain: one row per order.
-      Actual columns confirmed from BigQuery schema.
-      Supports: orders by state, revenue by state, delivery time analysis.
+      Supports: orders by state, revenue by state, delivery time analysis,
+      review scores by geography, product categories by region.
     config:
       materialized: table
     columns:
       # Surrogate + natural keys
       - name: order_key
-        description: Surrogate PK — actual column name in BigQuery.
+        description: Surrogate PK.
         tests:
           - not_null
           - unique
@@ -218,6 +282,36 @@ models:
       - name: geo_city
         description: City from geolocation lookup.
 
+      # Revenue measures
+      - name: item_count
+        description: Number of items in the order.
+      - name: items_total
+        description: Sum of item prices (excl. freight).
+      - name: freight_total
+        description: Sum of freight values.
+      - name: payment_value
+        description: Total payment value for the order.
+      - name: payment_type
+        description: Primary payment method.
+      - name: payment_installments
+        description: Number of payment installments.
+
+      # Review measures
+      - name: review_score
+        description: Customer review score (1-5).
+      - name: review_comment
+        description: Customer review comment text.
+
+      # Product category
+      - name: product_category_name
+        description: Primary product category (Portuguese).
+      - name: product_category_name_english
+        description: Primary product category (English).
+
+      # Seller
+      - name: seller_state
+        description: State of the primary seller.
+
       # Delivery time measures (days)
       - name: actual_delivery_days
         description: Days from purchase to actual delivery.
@@ -225,6 +319,8 @@ models:
         description: Days from purchase to estimated delivery.
       - name: delivery_delta_days
         description: Positive = early delivery; negative = late delivery.
+      - name: on_time_delivery
+        description: True if delivered on or before estimated date.
 
       # Raw timestamps
       - name: order_purchase_timestamp
