@@ -19,14 +19,14 @@ def get_kpi_summary(client, cfg):
     """
     fact = qualified_table(cfg, "Fact_Orders")
 
+    items = f"`{cfg['project_id']}.olist_silver_ben.stg_order_items`"
     sql = f"""
     SELECT
-        ROUND(SUM(f.payment_value), 2)        AS total_revenue,
+        ROUND(SUM(f.items_total), 2)           AS total_revenue,
         COUNT(DISTINCT f.order_id)             AS total_orders,
-        COUNT(DISTINCT oi.product_id)          AS unique_products,
+        (SELECT COUNT(DISTINCT product_id) FROM {items}) AS unique_products,
         ROUND(AVG(f.review_score), 2)          AS avg_review_score
     FROM {fact} f
-    LEFT JOIN `{cfg['project_id']}.olist_silver_ben.stg_order_items` oi USING (order_id)
     WHERE f.order_status NOT IN ('canceled', 'unavailable')
     """
     return run_query(client, sql)
@@ -45,8 +45,8 @@ def get_top_categories(client, cfg, limit: int = 15):
     SELECT
         COALESCE(f.product_category_name_english, 'Unknown') AS category,
         COUNT(DISTINCT f.order_id)                           AS orders,
-        ROUND(SUM(f.payment_value), 2)                       AS revenue,
-        ROUND(AVG(f.payment_value), 2)                       AS avg_order_value,
+        ROUND(SUM(f.items_total), 2)                         AS revenue,
+        ROUND(AVG(f.items_total), 2)                         AS avg_order_value,
         ROUND(AVG(f.review_score), 2)                        AS avg_review_score
     FROM {fact} f
     WHERE f.order_status NOT IN ('canceled', 'unavailable')
@@ -74,7 +74,7 @@ def get_top_products(client, cfg, limit: int = 20):
         COALESCE(p.product_category_name_english, 'Unknown')  AS category,
         p.product_weight_g,
         COUNT(DISTINCT f.order_id)                             AS orders,
-        ROUND(SUM(f.payment_value), 2)                         AS revenue
+        ROUND(SUM(oi.price), 2)                                AS revenue
     FROM {fact} f
     LEFT JOIN {items} oi USING (order_id)
     LEFT JOIN {products} p ON oi.product_id = p.product_id
@@ -110,6 +110,39 @@ def get_category_review_scores(client, cfg, min_reviews: int = 50):
     return run_query(client, sql)
 
 
+def get_monthly_trend_by_category(client, cfg, top_n: int = 10):
+    """
+    Monthly revenue by category, limited to top N categories by total revenue.
+    Used for stacked bar chart.
+
+    Expected columns:
+        month (str, 'YYYY-MM'), category (str), revenue (float)
+    """
+    fact = qualified_table(cfg, "Fact_Orders")
+
+    sql = f"""
+    WITH top_cats AS (
+        SELECT COALESCE(product_category_name_english, 'Unknown') AS category
+        FROM {fact}
+        WHERE order_status NOT IN ('canceled', 'unavailable')
+        GROUP BY 1
+        ORDER BY SUM(items_total) DESC
+        LIMIT {top_n}
+    )
+    SELECT
+        FORMAT_DATE('%Y-%m', DATE(f.order_purchase_timestamp)) AS month,
+        COALESCE(f.product_category_name_english, 'Unknown')   AS category,
+        ROUND(SUM(f.items_total), 2)                            AS revenue
+    FROM {fact} f
+    INNER JOIN top_cats
+        ON COALESCE(f.product_category_name_english, 'Unknown') = top_cats.category
+    WHERE f.order_status NOT IN ('canceled', 'unavailable')
+    GROUP BY 1, 2
+    ORDER BY 1 ASC
+    """
+    return run_query(client, sql)
+
+
 def get_monthly_category_trend(client, cfg, category: str):
     """
     Monthly order and revenue trend for a given category.
@@ -125,7 +158,7 @@ def get_monthly_category_trend(client, cfg, category: str):
     SELECT
         FORMAT_DATE('%Y-%m', DATE(f.order_purchase_timestamp)) AS month,
         COUNT(DISTINCT f.order_id)                             AS orders,
-        ROUND(SUM(f.payment_value), 2)                         AS revenue
+        ROUND(SUM(f.items_total), 2)                           AS revenue
     FROM {fact} f
     WHERE f.order_status NOT IN ('canceled', 'unavailable')
       AND COALESCE(f.product_category_name_english, 'Unknown') = @category
@@ -146,7 +179,7 @@ def get_category_revenue_vs_reviews(client, cfg):
     sql = f"""
     SELECT
         COALESCE(f.product_category_name_english, 'Unknown') AS category,
-        ROUND(SUM(f.payment_value), 2)                       AS total_revenue,
+        ROUND(SUM(f.items_total), 2)                         AS total_revenue,
         ROUND(AVG(f.review_score), 2)                        AS avg_review_score,
         COUNT(DISTINCT f.order_id)                           AS order_volume
     FROM {fact} f
@@ -154,6 +187,53 @@ def get_category_revenue_vs_reviews(client, cfg):
       AND f.review_score IS NOT NULL
     GROUP BY 1
     ORDER BY total_revenue DESC
+    """
+    return run_query(client, sql)
+
+
+def get_top_products_by_top_categories(client, cfg, top_cats: int = 5, top_products: int = 10):
+    """
+    Top N products by revenue within the top M categories.
+
+    Expected columns:
+        product_id (str), category (str), revenue (float)
+    """
+    fact = qualified_table(cfg, "Fact_Orders")
+    products = qualified_table(cfg, "Dim_Products")
+    items = f"`{cfg['project_id']}.olist_silver_ben.stg_order_items`"
+
+    sql = f"""
+    WITH top_cats AS (
+        SELECT COALESCE(product_category_name_english, 'Unknown') AS category
+        FROM {fact}
+        WHERE order_status NOT IN ('canceled', 'unavailable')
+        GROUP BY 1
+        ORDER BY SUM(items_total) DESC
+        LIMIT {top_cats}
+    ),
+    product_rev AS (
+        SELECT
+            oi.product_id,
+            COALESCE(p.product_category_name_english, 'Unknown') AS category,
+            COUNT(*)                                             AS qty_sold,
+            ROUND(SUM(oi.price), 2)                              AS revenue
+        FROM {fact} f
+        INNER JOIN top_cats tc
+            ON COALESCE(f.product_category_name_english, 'Unknown') = tc.category
+        INNER JOIN {items} oi USING (order_id)
+        LEFT JOIN {products} p ON oi.product_id = p.product_id
+        WHERE f.order_status NOT IN ('canceled', 'unavailable')
+        GROUP BY 1, 2
+    ),
+    ranked AS (
+        SELECT *,
+            ROW_NUMBER() OVER (PARTITION BY category ORDER BY revenue DESC) AS rn
+        FROM product_rev
+    )
+    SELECT product_id, category, qty_sold, revenue
+    FROM ranked
+    WHERE rn <= {top_products}
+    ORDER BY category ASC, revenue DESC
     """
     return run_query(client, sql)
 

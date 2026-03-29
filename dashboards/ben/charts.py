@@ -168,68 +168,41 @@ def load_top_products_table():
         ])
 
 
-# ── Category Revenue vs Review Score Bubble Chart ──────────
+# ── Category Revenue Pie Chart ──────────────────────────────
 
 
-def load_category_bubble_chart():
+def load_category_revenue_pie():
     """
-    Scatter bubble chart: X=Average Review Score, Y=Total Revenue.
-    Bubble size = Order Volume.
-    Color = Order Volume (gradient from red to green).
+    Donut pie chart: revenue contribution (%) by product category.
+    Shows top 20 categories by revenue.
     """
     client, cfg, err = _get_client()
     if err:
         return error_figure("GCP not configured")
 
-    from dashboards.ben.queries import get_category_revenue_vs_reviews
+    from dashboards.ben.queries import get_top_categories
 
     try:
-        df = get_category_revenue_vs_reviews(client, cfg)
+        df = get_top_categories(client, cfg, limit=20)
         if df.empty:
             return error_figure("No data available")
 
-        fig = px.scatter(
+        fig = px.pie(
             df,
-            x="avg_review_score",
-            y="total_revenue",
-            size="order_volume",
-            color="order_volume",
-            hover_name="category",
-            hover_data={
-                "avg_review_score": ":.2f",
-                "total_revenue": ":.2f",
-                "order_volume": True,
-            },
-            title="Category Revenue vs Review Score",
-            labels={
-                "avg_review_score": "Average Review Score",
-                "total_revenue": "Total Revenue (R$)",
-                "order_volume": "Order Volume",
-            },
-            color_continuous_scale=OLIST_COLORSCALE,
-            size_max=50,
+            values="revenue",
+            names="category",
+            title="Revenue Contribution by Product Category",
+            color_discrete_sequence=px.colors.qualitative.Bold,
+            hole=0.35,
         )
         fig.update_traces(
-            marker=dict(opacity=0.7, line=dict(width=1, color="rgba(255,140,0,0.3)")),
-            hovertemplate="<b>%{hovertext}</b><br>Avg Review: %{x:.2f}<br>Revenue: R$ %{y:,.0f}<br>Orders: %{customdata[2]}<extra></extra>"
+            textposition="inside",
+            textinfo="percent+label",
+            hovertemplate="<b>%{label}</b><br>Revenue: R$ %{value:,.0f}<br>Share: %{percent}<extra></extra>",
         )
         fig.update_layout(**_layout(
             height=500,
-            xaxis=dict(
-                title="Average Review Score",
-                gridcolor="rgba(255,140,0,0.08)",
-                range=[0, 5.5],
-            ),
-            yaxis=dict(
-                title="Total Revenue (R$)",
-                gridcolor="rgba(255,140,0,0.08)",
-            ),
-            coloraxis_colorbar=dict(
-                title="Order<br>Volume",
-                tickfont=dict(size=10),
-                thickness=15,
-                len=0.7,
-            ),
+            showlegend=False,
         ))
         return fig
     except Exception as e:
@@ -251,19 +224,41 @@ def load_monthly_trend_stacked(category: str = ""):
     if err:
         return error_figure("GCP not configured")
 
-    if not category:
-        return error_figure("Please select a category")
-
-    from dashboards.ben.queries import get_monthly_category_trend
+    from dashboards.ben.queries import get_monthly_category_trend, get_monthly_trend_by_category
 
     try:
+        if not category or category == "All Categories":
+            df = get_monthly_trend_by_category(client, cfg, top_n=10)
+            if df.empty:
+                return error_figure("No data available")
+
+            fig = px.bar(
+                df,
+                x="month",
+                y="revenue",
+                color="category",
+                title="Monthly Revenue by Category (Top 10)",
+                labels={"month": "Month", "revenue": "Revenue (R$)", "category": "Category"},
+                barmode="stack",
+                color_discrete_sequence=px.colors.qualitative.Bold,
+            )
+            fig.update_traces(
+                hovertemplate="<b>%{fullData.name}</b><br>%{x}<br>Revenue: R$ %{y:,.0f}<extra></extra>"
+            )
+            fig.update_layout(**_layout(
+                height=420,
+                hovermode="x unified",
+                xaxis=dict(title="Month", gridcolor="rgba(255,140,0,0.08)"),
+                yaxis=dict(title="Revenue (R$)", gridcolor="rgba(255,140,0,0.08)"),
+                legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5),
+            ))
+            return fig
+
         df = get_monthly_category_trend(client, cfg, category)
         if df.empty:
-            return error_figure(f"No data for category: {category}")
+            return error_figure(f"No data for: {category}")
 
         fig = go.Figure()
-
-        # Add orders as bar chart (left axis)
         fig.add_trace(go.Bar(
             x=df["month"],
             y=df["orders"],
@@ -272,8 +267,6 @@ def load_monthly_trend_stacked(category: str = ""):
             yaxis="y1",
             hovertemplate="<b>%{x}</b><br>Orders: %{y:,}<extra></extra>",
         ))
-
-        # Add revenue as line chart (right axis)
         fig.add_trace(go.Scatter(
             x=df["month"],
             y=df["revenue"],
@@ -284,40 +277,127 @@ def load_monthly_trend_stacked(category: str = ""):
             marker=dict(size=6),
             hovertemplate="<b>%{x}</b><br>Revenue: R$ %{y:,.2f}<extra></extra>",
         ))
-
         fig.update_layout(**_layout(
             title=f"Monthly Trend: {category}",
-            height=400,
+            height=420,
             hovermode="x unified",
             yaxis=dict(
-                title="Orders",
-                titlefont=dict(color=COLORS["orange"]),
+                title=dict(text="Orders", font=dict(color=COLORS["orange"])),
                 tickfont=dict(color=COLORS["orange"]),
                 gridcolor="rgba(255,140,0,0.08)",
             ),
             yaxis2=dict(
-                title="Revenue (R$)",
-                titlefont=dict(color=COLORS["green"]),
+                title=dict(text="Revenue (R$)", font=dict(color=COLORS["green"])),
                 tickfont=dict(color=COLORS["green"]),
                 anchor="x",
                 overlaying="y",
                 side="right",
             ),
-            xaxis=dict(
-                title="Month",
-                gridcolor="rgba(255,140,0,0.08)",
-            ),
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1,
-            ),
+            xaxis=dict(title="Month", gridcolor="rgba(255,140,0,0.08)"),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         ))
         return fig
     except Exception as e:
         return error_figure(f"Error: {str(e)[:100]}")
+
+
+# ── Top Products by Category Table ──────────────────────────
+
+
+def load_top_products_by_category_table():
+    """
+    HTML pivot table: each top-5 category is a column group containing
+    Product ID / Qty Sold / Revenue sub-columns, with top 10 products per category.
+    """
+    client, cfg, err = _get_client()
+    if err:
+        return f'<div style="color:{COLORS["red"]}">GCP not configured — see quick-setup.md</div>'
+
+    from dashboards.ben.queries import get_top_products_by_top_categories
+
+    try:
+        df = get_top_products_by_top_categories(client, cfg)
+        if df.empty:
+            return f'<div style="color:{COLORS["red"]}">No data available</div>'
+
+        categories = df["category"].unique().tolist()
+
+        # Build per-category list of rows (up to 10 each)
+        cat_data = {}
+        for cat in categories:
+            rows = df[df["category"] == cat][["product_id", "qty_sold", "revenue"]].reset_index(drop=True)
+            cat_data[cat] = rows
+
+        n_rows = max(len(v) for v in cat_data.values())
+
+        # ── Styles ──────────────────────────────────────────────
+        th_cat = (
+            "padding:10px 6px;text-align:center;font-size:12px;font-weight:700;"
+            f"color:{COLORS['orange']};background:#111;border:1px solid #333;"
+            "white-space:nowrap;letter-spacing:0.5px;"
+        )
+        th_sub = (
+            "padding:6px 8px;text-align:center;font-size:11px;font-weight:600;"
+            f"color:{COLORS['gold']};background:#1a1a1a;border:1px solid #2a2a2a;"
+        )
+        td_id = (
+            "padding:6px 8px;font-size:11px;font-family:monospace;"
+            "color:#ddd;background:#141414;border:1px solid #222;"
+            "word-break:break-all;white-space:normal;max-width:160px;"
+        )
+        td_num = (
+            "padding:6px 8px;font-size:11px;text-align:right;"
+            "color:#ccc;background:#141414;border:1px solid #222;"
+        )
+        td_empty = (
+            "padding:6px 8px;background:#111;border:1px solid #1e1e1e;"
+        )
+
+        # ── Header rows ─────────────────────────────────────────
+        cat_headers = "".join(
+            f'<th colspan="3" style="{th_cat}">{cat}</th>'
+            for cat in categories
+        )
+        sub_headers = "".join(
+            f'<th style="{th_sub}">Product ID</th>'
+            f'<th style="{th_sub}">Qty Sold</th>'
+            f'<th style="{th_sub}">Revenue (R$)</th>'
+            for _ in categories
+        )
+
+        # ── Data rows ────────────────────────────────────────────
+        data_rows = ""
+        for i in range(n_rows):
+            bg = "#161616" if i % 2 == 0 else "#141414"
+            cells = ""
+            for cat in categories:
+                rows = cat_data[cat]
+                if i < len(rows):
+                    row = rows.iloc[i]
+                    cells += (
+                        f'<td style="{td_id}">{row["product_id"]}</td>'
+                        f'<td style="{td_num}">{int(row["qty_sold"]):,}</td>'
+                        f'<td style="{td_num}">R$ {row["revenue"]:,.2f}</td>'
+                    )
+                else:
+                    cells += f'<td style="{td_empty}"></td>' * 3
+            data_rows += f'<tr style="background:{bg}">{cells}</tr>'
+
+        html = f"""
+        <div style="overflow-x:auto;padding:4px 0;">
+          <table style="border-collapse:collapse;width:100%;font-size:12px;">
+            <thead>
+              <tr>{cat_headers}</tr>
+              <tr>{sub_headers}</tr>
+            </thead>
+            <tbody>{data_rows}</tbody>
+          </table>
+        </div>
+        """
+        return html
+
+    except Exception as e:
+        return f'<div style="color:{COLORS["red"]}">Error: {str(e)[:150]}</div>'
 
 
 # ── Category Performance Heatmap ─────────────────────────────

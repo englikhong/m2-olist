@@ -21,7 +21,8 @@ from dashboards.ben.charts import (
     load_kpis,
     load_top_categories_bar,
     load_top_products_table,
-    load_category_bubble_chart,
+    load_category_revenue_pie,
+    load_top_products_by_category_table,
     load_category_heatmap,
     load_monthly_trend_stacked,
 )
@@ -55,8 +56,8 @@ with gr.Blocks(
                 dashboard.load(fn=load_top_categories_bar, outputs=categories_chart)
 
             with gr.Column(scale=1):
-                bubble_chart = gr.Plot(label="Revenue vs Review Score")
-                dashboard.load(fn=load_category_bubble_chart, outputs=bubble_chart)
+                pie_chart = gr.Plot(label="Revenue by Category")
+                dashboard.load(fn=load_category_revenue_pie, outputs=pie_chart)
 
     # ── Monthly Trend with Category Filter ─────────────────────
     with gr.Group():
@@ -73,11 +74,14 @@ with gr.Blocks(
         trend_chart = gr.Plot(label="Monthly Revenue & Orders")
 
         def update_trend(category):
-            if category == "All Categories":
-                return gr.Plot.update(value=None)
+            if isinstance(category, list):
+                category = category[0] if category else "All Categories"
+            if not category or category == "All Categories":
+                return None
             return load_monthly_trend_stacked(category)
 
         category_dropdown.change(fn=update_trend, inputs=category_dropdown, outputs=trend_chart)
+        dashboard.load(fn=lambda: load_monthly_trend_stacked("All Categories"), outputs=trend_chart)
 
         # Populate categories on load
         def populate_categories():
@@ -85,13 +89,13 @@ with gr.Blocks(
             _get_client = make_bq_client_getter(dev_config_path("ben"))
             client, cfg, err = _get_client()
             if err or client is None:
-                return ["All Categories"]
+                return gr.Dropdown(choices=["All Categories"], value="All Categories")
             try:
                 df = get_category_list(client, cfg)
                 cats = ["All Categories"] + df["category"].tolist()
-                return gr.Dropdown.update(choices=cats)
+                return gr.Dropdown(choices=cats, value="All Categories")
             except:
-                return ["All Categories"]
+                return gr.Dropdown(choices=["All Categories"], value="All Categories")
 
         dashboard.load(fn=populate_categories, outputs=category_dropdown)
 
@@ -104,6 +108,12 @@ with gr.Blocks(
             wrap=True
         )
         dashboard.load(fn=load_top_products_table, outputs=products_table)
+
+    # ── Top Products by Category ─────────────────────────────────
+    with gr.Group():
+        section_title("Top Products by Category", accent="gold")
+        products_by_cat_html = gr.HTML()
+        dashboard.load(fn=load_top_products_by_category_table, outputs=products_by_cat_html)
 
     # ── Category Performance Matrix ──────────────────────────────
     with gr.Group():

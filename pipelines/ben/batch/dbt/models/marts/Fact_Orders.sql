@@ -30,21 +30,8 @@ reviews AS (
 products AS (
     SELECT
         oi.order_id,
-        MAX(p.product_category_name) AS product_category_name,
-        -- map category to English (most common categories)
-        MAX(CASE p.product_category_name
-            WHEN 'cama_mesa_banho' THEN 'Bed Bath Table'
-            WHEN 'beleza_saude' THEN 'Health Beauty'
-            WHEN 'esporte_lazer' THEN 'Sports Leisure'
-            WHEN 'moveis_decoracao' THEN 'Furniture Decor'
-            WHEN 'informatica_acessorios' THEN 'Computers Accessories'
-            WHEN 'utilidades_domesticas' THEN 'Housewares'
-            WHEN 'relogios_presentes' THEN 'Watches Gifts'
-            WHEN 'telefonia' THEN 'Telephony'
-            WHEN 'ferramentas_jardim' THEN 'Garden Tools'
-            WHEN 'automotivo' THEN 'Auto'
-            ELSE COALESCE(p.product_category_name, 'Other')
-        END) AS product_category_name_english
+        MAX(p.product_category_name)         AS product_category_name,
+        MAX(p.product_category_name_english) AS product_category_name_english
     FROM {{ ref('stg_order_items') }} oi
     LEFT JOIN {{ ref('stg_products') }} p USING (product_id)
     GROUP BY oi.order_id
