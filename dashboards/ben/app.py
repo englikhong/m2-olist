@@ -76,8 +76,8 @@ with gr.Blocks(
         def update_trend(category):
             if isinstance(category, list):
                 category = category[0] if category else "All Categories"
-            if not category or category == "All Categories":
-                return None
+            if not category:
+                category = "All Categories"
             return load_monthly_trend_stacked(category)
 
         category_dropdown.change(fn=update_trend, inputs=category_dropdown, outputs=trend_chart)
@@ -94,7 +94,7 @@ with gr.Blocks(
                 df = get_category_list(client, cfg)
                 cats = ["All Categories"] + df["category"].tolist()
                 return gr.Dropdown(choices=cats, value="All Categories")
-            except:
+            except Exception:
                 return gr.Dropdown(choices=["All Categories"], value="All Categories")
 
         dashboard.load(fn=populate_categories, outputs=category_dropdown)

@@ -134,19 +134,18 @@ def load_top_products_table():
     Load top 20 products by revenue as a pandas DataFrame.
     Returns: DataFrame (Gradio Table expects df, not figure)
     """
+    _empty = pd.DataFrame(columns=["Product ID", "Category", "Weight", "Orders", "Revenue"])
+
     client, cfg, err = _get_client()
     if err:
-        # Return empty DataFrame with proper structure on error
-        return pd.DataFrame(columns=[
-            "product_id", "category", "product_weight_g", "orders", "revenue"
-        ])
+        return _empty
 
     from dashboards.ben.queries import get_top_products
 
     try:
         df = get_top_products(client, cfg, limit=20)
         if df.empty:
-            return df
+            return _empty
 
         # Format display columns
         df_display = df.copy()
@@ -162,10 +161,8 @@ def load_top_products_table():
             "revenue": "Revenue",
         })
         return df_display[["Product ID", "Category", "Weight", "Orders", "Revenue"]]
-    except Exception as e:
-        return pd.DataFrame(columns=[
-            "product_id", "category", "product_weight_g", "orders", "revenue"
-        ])
+    except Exception:
+        return _empty
 
 
 # ── Category Revenue Pie Chart ──────────────────────────────
@@ -212,7 +209,7 @@ def load_category_revenue_pie():
 # ── Monthly Trend for Selected Category ──────────────────────
 
 
-def load_monthly_trend_stacked(category: str = ""):
+def load_monthly_trend_stacked(category: str = "All Categories"):
     """
     Monthly order and revenue trend for a selected product category.
     Shows dual traces: orders (left axis) and revenue (right axis).
